@@ -319,13 +319,14 @@ def mhrw(prng = Random.new(0), root, count)
         # reject w with probability min(1, |neigh v|/|neigh w|)
         p = prng.rand()  
         kv = v.friends_count + v.followers_count
-        kw = w.friends_count + v.followers_count
+        kw = w.friends_count + w.followers_count
         if p <= kv.to_f/kw.to_f
             $num_mhrw_accepted_samples += 1
             sample.push(w)
             num_samples += 1
             current_user_id = w.id
         else
+            puts "reject #{w.name} because kv=#{kv} / kw=#{kw}"
             $num_mhrw_rejected_samples += 1
             # stay at v
         end
