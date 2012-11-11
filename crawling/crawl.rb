@@ -18,6 +18,7 @@ def get_user(uid)
     user = NIL
     begin
         num_attempts += 1
+        puts "calling user on #{uid}"
         user = Twitter.user(uid)
     rescue Twitter::Error::TooManyRequests => error
         if num_attempts <= MAX_ATTEMPTS
@@ -57,9 +58,9 @@ def get_users(uidlist)
     return users
 end
 
-$fid_cache = {}
-def get_cursor(uid,cur) 
-    result = $fid_cache[[uid,cur]]
+$follower_cache = {}
+def get_followers_cursor(uid,cur) 
+    result = $follower_cache[[uid,cur]]
     if result then
         return result
     end
@@ -68,6 +69,7 @@ def get_cursor(uid,cur)
     newcur = NIL
     begin
         num_attempts += 1
+        puts "calling followid on #{uid}"
         newcur = Twitter.follower_ids(uid, options={cursor: cur})
     rescue Twitter::Error::TooManyRequests => error
         if num_attempts <= MAX_ATTEMPTS
@@ -81,20 +83,50 @@ def get_cursor(uid,cur)
         end
     end
 
-    $fid_cache[[uid,cur]] = newcur
+    $follower_cache[[uid,cur]] = newcur
+    
+    return newcur
+end
+
+$friend_cache = {}
+def get_friends_cursor(uid,cur) 
+    result = $friend_cache[[uid,cur]]
+    if result then
+        return result
+    end
+
+    num_attempts = 0
+    newcur = NIL
+    begin
+        num_attempts += 1
+        puts "calling friendid on #{uid}"
+        newcur = Twitter.friend_ids(uid, options={cursor: cur})
+    rescue Twitter::Error::TooManyRequests => error
+        if num_attempts <= MAX_ATTEMPTS
+            waittime = [error.rate_limit.reset_in,10].max
+            p "(friend_id) rate limited: waiting "
+            p waittime
+            sleep waittime
+            retry
+        else
+            raise "Too many rate limit fails"
+        end
+    end
+
+    $friend_cache[[uid,cur]] = newcur
     
     return newcur
 end
 
 def get_random_follower(user, prng)
     # pick a random follower
-    follower_index = prng.rand(user.follower_count)
+    follower_index = prng.rand(user.followers_count)
 
     next_cursor = -1
     last_index = 0
     next_user_id = 0
     while next_cursor != 0 do
-        cur = get_cursor(user.id, next_cursor)
+        cur = get_followers_cursor(user.id, next_cursor)
         if last_index + cur.ids.length <= follower_index then
             last_index += cur.ids.length
         else
@@ -109,6 +141,50 @@ def get_random_follower(user, prng)
     return next_user_id
 end
 
+def get_random_friend_or_follower(user, prng)
+    # pick a random friend or follower
+    ff_index = prng.rand(user.friends_count + user.followers_count)
+
+    if ff_index >= user.friends_count then
+        # choose from followers
+        follower_index = ff_index - user.friends_count
+        next_cursor = -1
+        last_index = 0
+        next_user_id = 0
+        while next_cursor != 0 do
+            cur = get_followers_cursor(user.id, next_cursor)
+            if last_index + cur.ids.length <= follower_index then
+                last_index += cur.ids.length
+            else
+                within_cur_index = follower_index - last_index
+                next_user_id = cur.ids[within_cur_index]
+                break
+            end 
+
+            next_cursor = cur.next_cursor
+        end
+        return next_user_id
+    else
+        # choose from friends
+        friend_index = ff_index
+        next_cursor = -1
+        last_index = 0
+        next_user_id = 0
+        while next_cursor != 0 do
+            cur = get_friends_cursor(user.id, next_cursor)
+            if last_index + cur.ids.length <= friend_index then
+                last_index += cur.ids.length
+            else
+                within_cur_index = friend_index - last_index
+                next_user_id = cur.ids[within_cur_index]
+                break
+            end 
+
+            next_cursor = cur.next_cursor
+        end
+        return next_user_id
+    end
+end
 
 
 def random_walk(len)
@@ -121,7 +197,7 @@ def random_walk(len)
         chain += [user]
 
         # bail if no followers
-        if user.follower_count == 0 then
+        if user.followers_count == 0 then
             return chain
         end
 
@@ -147,7 +223,7 @@ def bfs(len, worklist = [], visited = Set.new)
         next_user_id = 0
         while next_cursor != 0 do
             # get the next page of follower ids
-            cur = get_cursor(current_user_id, next_cursor)
+            cur = get_followers_cursor(current_user_id, next_cursor)
 
             # add unvisited users to worklist
             worklist.concat( cur.ids.select { |fid| not visited.member?(fid) } ) 
@@ -193,7 +269,7 @@ def smart_bfs(len, to_get_users = [], to_get_neighbors = [], visited = Set.new)
             next_user_id = 0
             while next_cursor != 0 do
                 # get the next page of follower ids
-                cur = get_cursor(uid, next_cursor)
+                cur = get_followers_cursor(uid, next_cursor)
 
                 # add never-before-seen users to worklist
                 newusers = cur.ids.select { |fid| not visited.member?(fid) }
@@ -211,6 +287,7 @@ end
 
 $num_mhrw_rejected_samples = 0
 $num_mhrw_accepted_samples = 0
+$num_mhrw_protected_samples = 0
 def mhrw(prng = Random.new(0), root, count)
     sample = []
     current_user_id = root
@@ -218,19 +295,32 @@ def mhrw(prng = Random.new(0), root, count)
     while num_samples < count do
         v = get_user(current_user_id) 
 
-        # bail if no followers
-        if v.follower_count == 0 then
+        # bail if no followers or friends (this should never happen)
+        if v.followers_count+v.friends_count == 0 then
             # dead end
             return [true,sample]
         end
 
-        # pick a follower uniformly at random
-        neighbor_id = get_random_follower(v, prng)
+        # pick a neighbor (friend or follower) uniformly at random
+        neighbor_id = get_random_friend_or_follower(v, prng)
         w = get_user(neighbor_id)
+
+        # reject w if protected account
+        # Twitter API will not allow calls to followers/ids or friends/ids
+        # only getting the user info.
+        # This practical concern changes the effective in/out degree of 
+        # neighbor nodes. Hopefully proportion of protected neighbors is independent.
+        if w.protected then
+            $num_mhrw_protected_samples += 1
+            # stay at v
+            next 
+        end
         
         # reject w with probability min(1, |neigh v|/|neigh w|)
         p = prng.rand()  
-        if p <= v.follower_count.to_f/w.follower_count.to_f
+        kv = v.friends_count + v.followers_count
+        kw = w.friends_count + v.followers_count
+        if p <= kv.to_f/kw.to_f
             $num_mhrw_accepted_samples += 1
             sample.push(w)
             num_samples += 1
@@ -309,7 +399,7 @@ def collect_mhrw( root, goal = 100000 )
            }
        }
        sofar += newsamples.length
-       puts "collected #{sofar} of #{goal}; acc=#{$num_mhrw_accepted_samples} rej=#{$num_mhrw_rejected_samples}"
+       puts "collected #{sofar} of #{goal}; acc=#{$num_mhrw_accepted_samples} rej=#{$num_mhrw_rejected_samples} prot=#{$num_mhrw_protected_samples}"
 
        if deadend then 
            if newsamples.empty? then
@@ -317,7 +407,7 @@ def collect_mhrw( root, goal = 100000 )
            else
                puts "#{newsamples[-1]} was a dead end with no followers"
            end
-           break
+           raise "Dead end"
        end
     end
 end
