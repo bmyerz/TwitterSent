@@ -221,14 +221,14 @@ def mhrw(prng = Random.new(0), root, count)
         # bail if no followers
         if v.follower_count == 0 then
             # dead end
-            return [false,sample]
+            return [true,sample]
         end
 
         # pick a follower uniformly at random
         neighbor_id = get_random_follower(u, prng)
-
         w = get_user(neighbor_id)
         
+        # reject w with probability min(1, |neigh v|/|neigh w|)
         p = prng.rand()  
         if p <= v.follower_count.to_f/w.follower_count.to_f
             $num_mhrw_accepted_samples += 1
