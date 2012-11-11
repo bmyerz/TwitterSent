@@ -1,8 +1,19 @@
 require './config_private'
 
+
+# Twitter uses multiJSON to allow configured json parser
+# yajl is fast json parser
+require 'yajl'  
+
 MAX_ATTEMPTS = 3
 
+$u_cache = {}
 def get_user(uid) 
+    result = $u_cache[uid]
+    if result then
+        return result
+    end
+
     num_attempts = 0
     user = NIL
     begin
@@ -20,10 +31,39 @@ def get_user(uid)
         end
     end
 
+    $u_cache[uid] = user
+
     return user
 end
 
+def get_users(uidlist) 
+    num_attempts = 0
+    user = NIL
+    begin
+        num_attempts += 1
+        users = Twitter.users(uidlist)
+    rescue Twitter::Error::TooManyRequests => error
+        if num_attempts <= MAX_ATTEMPTS
+            waittime = [error.rate_limit.reset_in,10].max
+            p "(users) rate limited: waiting "
+            p waittime
+            sleep waittime
+            retry
+        else
+            raise "Too many rate limit fails"
+        end
+    end
+
+    return users
+end
+
+$fid_cache = {}
 def get_cursor(uid,cur) 
+    result = $fid_cache[[uid,cur]]
+    if result then
+        return result
+    end
+
     num_attempts = 0
     newcur = NIL
     begin
