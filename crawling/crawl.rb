@@ -212,7 +212,7 @@ end
 $num_mhrw_rejected_samples = 0
 $num_mhrw_accepted_samples = 0
 def mhrw(prng = Random.new(0), root, count)
-    sample = [root]    
+    sample = []
     current_user_id = root
     num_samples = 0
     while num_samples < count do
@@ -225,7 +225,7 @@ def mhrw(prng = Random.new(0), root, count)
         end
 
         # pick a follower uniformly at random
-        neighbor_id = get_random_follower(u, prng)
+        neighbor_id = get_random_follower(v, prng)
         w = get_user(neighbor_id)
         
         # reject w with probability min(1, |neigh v|/|neigh w|)
@@ -288,7 +288,7 @@ def collect_mhrw( root, goal = 100000 )
     prng = Random.new(Time.now.usec)
     File.open($mhrw_fn, 'a') { |f|
         f.puts "---- new collection ----"
-        f.puts "---- started at uid=#{uid} ----"
+        f.puts "---- started at uid=#{root} ----"
     }
 
     next_uid = root
