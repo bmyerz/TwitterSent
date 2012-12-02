@@ -178,7 +178,7 @@ for(i in 1:N){
   Question[i]<-length(gregexpr("\\?",text.raw[i])[[1]])   
   Emoticon[i,1]<-length(grep(emo.pos,text.raw[i])) - length(grep(emo.pos.false,text.raw[i])) 
   Emoticon[i,2]<-length(grep(emo.neg,text.raw[i])) -length(grep(emo.neg.false,text.raw[i]))
-  URL <- length(grep(http.exp,text.raw[i]))
+  URL[i] <- length(grep(http.exp,text.raw[i]))
   text[i]<-enc2native(text.raw[i])
   text[i]<-gsub(pattern=at.exp," ",text[i])
   text[i]<-gsub(pattern=http.exp," ",text[i])
