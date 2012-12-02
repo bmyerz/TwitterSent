@@ -126,9 +126,11 @@ library(e1071)
 library(chron)
 source("http://bioconductor.org/biocLite.R")
 biocLite("Rgraphviz")
-install.packages("~/Dropbox/UW/STAT 502/Walking in Tweeter/Using/Rstem_0.4-1.tar.gz", repos = NULL, 
-                 type = "source", 
-                 lib="/Library/Frameworks/R.framework/Versions/2.15/Resources/library")
+#install package RStem from file
+#install.packages("~/Dropbox/UW/STAT 502/Walking in Tweeter/Using/Rstem_0.4-1.tar.gz", repos = NULL, 
+#                type = "source", 
+#                lib="/Library/Frameworks/R.framework/Versions/2.15/Resources/library")
+
 #################################################################################
 # data<-read.csv("LabeledSetBrandon.csv",header=T);text.raw<-as.character(data[,3])
 # data<-read.csv("twits_11_7_2012.csv",header=T);text.raw<-as.character(data[,3])
