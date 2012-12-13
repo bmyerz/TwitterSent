@@ -52,6 +52,26 @@ def insert_user( table, user )
     end
 end
 
+def prepare_id_sample_table( tableid, db )
+    db.create_table?(tableid) {
+        primary_key :entry_id
+        String :collection_date
+        Integer :sample_id
+        Integer :user_id
+    }
+    return db[tableid]
+end
+
+def insert_id_sample( table, user_id, date, sample_id )
+    record = {}
+    record[:user_id] = user_id
+    record[:collection_date] = date
+    record[:sample_id] = sample_id
+    
+    table.insert( record )
+end
+
+
 def prepare_chain_table( tableid, db )
   
   db.create_table?(tableid) { 
@@ -167,7 +187,22 @@ def add_chains(chain_ids, path_prefix="chain", fname="twitter.mhrw.all.compress.
     }
 end
 
+def add_id_sample(users_sequence, sample_id, date=Time.now.to_s, dbfile='twitter2.db')
+    db = Sequel.sqlite(dbfile)
+    ids_table = prepare_id_sample_table( :id_samples, db )
+    user_table = prepare_user_table( :users, db )
 
+    i = 0
+
+    db.transaction do #BEGIN
+        users_sequence.each{ |u|
+            if i%256==0 then puts i end
+            insert_user( user_table, u )
+            insert_id_sample( ids_table, u[:id], date, sample_id )
+            i+=1
+        }
+    end #COMMIT
+end
 
 def add_all_tweets(dbfile='twitter.db', tablename, tweets)
     db = Sequel.sqlite(dbfile)
