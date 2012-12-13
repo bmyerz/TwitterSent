@@ -1,0 +1,17 @@
+\section{Introduction}
+
+Twitter is the largest social networking + microblogging site on the web. It has shown to be an exciting and unique way of tracking social trends and spreading news. With over 500 million registered user accounts, Twitter represents an important population for study. 
+
+To do statistical inference on this population requires a strategy for collecting uniform samples. In this work we present two ways of uniformly sampling Twitter user accounts. The second of these methods, using theory of random walks through networks, is more practically challenging, but as Twitter grows, it provides the only scalable way to perform sampling in the future. With the two methods, we collect two reliable samples of 144,000 and 105,000 users, respectively.
+
+Our particular inference problem in this work is: what is the overall sentiment of the Twitter population over time based on their \emph{tweets}? Tweets are 140 character messages that Twitter users broadcast to users that \emph{follow} them. The \emph{follow} relation is what links users into a network. We define sentiment as \{negative, neutral, positive\}. We apply 4 supervised learning methods and 2 unsupervised learning methods to this classification problem. We evaluate the methods by validating them on 2800 English tweets that we manually labeled with sentiment.
+
+The contributions of this work are:
+\begin{itemize}
+\item Demonstration of two sampling methods on the Twitter population
+\item Collection of two large uniform samples of Twitter users
+\item An evaluation of 6 classification methods for sentiment analysis of tweets
+\end{itemize}
+
+This paper proceeds as follows. Section~\ref{sec:sampling} discusses the problem of sampling Twitter users, Section~\ref{sec:idsampling} describes a way to sample Twitter users by generating integer user~\ids, and Section~\ref{sec:graphmethods} describes how to reliably sample Twitter users by walking the social connections of Twitter. Section~\ref{sec:feature} describes challenges of feature extraction for
+sentiment analysis. Section~\ref{sec:class} describes our classification methods and Section~\ref{sec:eval} is an evaluation of them. 

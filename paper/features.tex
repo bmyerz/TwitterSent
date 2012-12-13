@@ -1,0 +1,150 @@
+\section{Feature extraction}
+\label{sec:feature}
+
+To apply learning techniques to Twitter tweets, we need to pick a set
+of features that may help distinguish the sentiments of tweets. Using
+tweet text presents unique challenges in both text processing and
+learning. In this section, we discuss textual features, text cleanup,
+how to pick fixed weights for word features, and non-word features.
+
+\subsection{Text features}
+Common features for learning from English text include groupings of words:
+
+\begin{enumerate}
+\item unigrams - single words (a.k.a ``bag of words'')
+\item bigrams - all unique adjacent pairs of words
+\item trigrams and more generally n-grams
+\item symbol n-grams
+\end{enumerate}
+
+We settled on the unigrams approach, although we considered bigrams.
+Because of the greater sparsity of bigram-based features, too little
+training data yielded poor results. Theoretically, bigrams should work
+better given a larger training set because they can more precisely
+pick up on pairs of words that change the meaning of a sentence when
+used together (``Don't you like sunny days?" vs. ``I don't like sunny days").
+
+Twitter messages are very short, with an average length of 10 words. In isolation, this provides very little context to derive any valuable information. Finding more rich features is one way to compensate for this.
+We could also consider Natural Language Processing (NLP) techniques to extract additional useful features from text, such as part-of-speech of words, named entity detection, and tense detection \cite{Padro:2010}. Because of the 140 character requirement and informal nature of tweets, they tend to have much less grammatical structure, so typical NLP tools may be ineffective. Recent ongoing work \cite{Gimpel:2011} has made available a tool for part-of-speech tagging for Twitter text. We are considering such tools for extracting richer features in future improvements of our classification.
+
+
+\subsection{Text processing} 
+
+Preparing tweet text for feature extraction poses challenges. Most tweets have
+grammatical and orthographic errors, use slang, abbreviations, and made-up
+words, use symbols to replace letters, and spell words in a variety of creative
+ways. The assumption is that having more alike unigram features between tweets
+overall gives more information than the particular mispelling or instantiation of the
+word. We discuss two processing steps: stemming and spell checking. Both of
+these can reduce similar words and spellings to the same word to greatly
+increase feature overlap between tweets. 
+
+
+\paragraph{Stemming}
+
+\emph{Stemming}, or lemmatisation, reduces a word to its root. This ensures that multiple forms of the same words become a single feature. For example,
+\begin{itemize}
+\item working $\rightarrow$ work
+\item worked $\rightarrow$ work
+\item works $\rightarrow$  work
+\end{itemize}
+
+We used an implementation of the Porter Stemming Algorithm \cite{Porter:1980}.
+It uses a number of rules to strip the suffixes of English words. The
+rule-based stemmer produces some false positives and false negatives. False
+positives include occasional overstemming; for example, ``one'' and ``on'' stem
+to ``on''. False negatives include mistakes that arise from lack of irregular
+verbs support; for example, ``got'' is not stemmed to ``get''. These problems
+can be addressed by additionally using a dictionary-based stemmer, but we did
+not find a freely available one. We note that these sorts of false
+negatives might happen to have a net positive effect on classification
+accuracy because different verb types may be used in different
+sentiments. Instead of being concerned with these details, using part-of-speech and tense tagging would be more robust.
+
+
+\paragraph{Spell checking}
+
+We studied three approaches to deal with spelling: phonetic algorithms,
+spellcheckers, and symbol n-grams. Phonetic algorithms use the assumption that
+misspellings often sound the same as the properly spelled word: they match similar
+sounding words. The well-known Soundex algorithm \cite{Jacobs:1982} produces a code for each
+word. Words with matching codes are assumed to be the same. For example, ``Twitter", ``Twiter'', and ``tweeter'' emit the same code. The algorithm produced too many false positives to be useful on our data. We are considering better phonetic algorithms like Metaphone \cite{Philips:1990}, which improves upon Soundex by taking better account of English inconsistencies and pronunciation.
+
+We also tried a spellchecker library NetSpell \cite{NetSpell}.
+Spellcheckers use a combination of phonectic algorithms and string
+matching with a dictionary to infer the correct spelling of a word.
+Unfortunately, even with the provided 100,000 word dictionary, the
+spellchecker could not handle the variation of words used in tweets.
+Users tend to include many made-up words by adding prefixes and
+suffixes or by combining words, as well as slang and abbreviations.
+The spellchecker often provides corrections that are unrelated to the
+user intention.
+
+The third spelling approach is using symbol n-grams instead of
+full-word unigrams as features. For example, symbol 3-grams for the
+word ``twitter'' are ``twi'', ``wit'', ``itt'', ``tte'', and ``ter''.
+Although when used alone such features lose more semantic meaning of
+text, they work well when text contains many misspellings. Some n-grams
+correspond to morphemes and roots, which make features more robust to
+word transformation.
+
+\subsection{Word weights}
+
+
+The text processing steps produce a list of unique unigrams in each
+tweet. To use the features in learning algorithms we must
+convert them to numeric vectors. The basic approach is to 
+assign a word feature to 1 when the word is present and 0 otherwise.
+This does not capture information about how often the word was used.
+
+One way to correct this is to assign higher weight for more
+frequent words. Words that are frequent in all documents are weighted
+less because they provide less differentiation between documents. TF-IDF
+is such a weighting approach, computed using term frequency (TF) and
+inverse document frequency (IDF). TFIDF is a poor fit for sentiment
+analysis because repitition of a positive-correlated word does not always
+denote stronger positive sentiment.
+
+A related scheme, Delta TFIDF \cite{Martineau:2009}, has been shown
+to weight more sentimental words higher than TFIDF. The insight is that
+unevenly distributed words in the corpus should be given more weight
+than evenly distributed words because they better differentiate
+between negative and positive. The feature value for a word is
+essentially the difference between the TFIDF for the negatively and
+positively labeled documents. Using Delta TFIDF weighting, the top 10
+positive/negative words from our 2800-tweet dataset are:
+% latex table generated in R 2.15.1 by xtable 1.7-0 package
+% Wed Dec 12 17:26:32 2012
+\begin{table}[ht]
+    \begin{center}
+        \begin{tabular}{rll}
+            \hline
+            & positive & negative \\ 
+            \hline
+            1 & birthday & bitch \\ 
+            2 & awesome & tired \\ 
+            3 & excited & did \\ 
+            4 & song & pissed \\ 
+            5 & great & write \\ 
+            6 & thank & any \\ 
+            7 & God & fuck \\ 
+            8 & Thanksgiving & someone \\ 
+            9 & luck & hate \\ 
+            10 & amazing & hurt \\ 
+            \hline
+        \end{tabular}
+    \end{center}
+\end{table}
+
+
+\subsection{Non-word features}
+
+Non-word features may be able to compensate for the short length of
+tweets when learning sentiment. Non-word features we used were
+``western'' emoticons, exclamation marks, question marks, number of
+hashtags (Twitter topic tag) in the message, and presence of a URL. Of
+these, emoticons and punctuation were treated as unigrams as
+discussed. Other features that were collected but not extracted for
+learning include time of day, capitilization-related features, and
+presence of mentions. Of these, we believe time of day could have a
+relatively large impact on sentiment. 
