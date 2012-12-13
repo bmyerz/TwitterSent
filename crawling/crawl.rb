@@ -1,5 +1,5 @@
-require './config_private'
-
+$dir = ARGV[1]
+require "#{$dir}/config_private"
 
 # Twitter uses multiJSON to allow configured json parser
 # yajl is fast json parser
@@ -11,30 +11,51 @@ $u_cache = {}
 def get_user(uid) 
     result = $u_cache[uid]
     if result then
-        return result
-    end
-
-    num_attempts = 0
-    user = NIL
-    begin
-        num_attempts += 1
-        puts "calling user on #{uid}"
-        user = Twitter.user(uid)
-    rescue Twitter::Error::TooManyRequests => error
-        if num_attempts <= MAX_ATTEMPTS
-            waittime = [error.rate_limit.reset_in,10].max
-            p "(user) rate limited: waiting "
-            p waittime
-            sleep waittime
-            retry
+        # catch an anomaly where sometimes the user data is incomplete
+        if not (result.statuses_count==0 and result.followers_count==0 and result.friends_count==0) then
+            return result
         else
-            raise "Too many rate limit fails"
+            $u_cache[uid] = nil
         end
     end
 
-    $u_cache[uid] = user
+    while true do
 
-    return user
+        num_attempts = 0
+        user = NIL
+        begin
+            num_attempts += 1
+            puts "calling user on #{uid}"
+            user = Twitter.user(uid)
+        rescue Twitter::Error::TooManyRequests => error
+            if num_attempts <= MAX_ATTEMPTS
+                waittime = [error.rate_limit.reset_in,10].max
+                p "(user) rate limited: waiting "
+                p waittime
+                sleep waittime
+                retry
+            else
+                raise "Too many rate limit fails"
+            end
+        rescue Twitter::Error::NotFound => error
+            # this could perhaps happen due to inconsistent data like a deleted user?
+            puts "#{error.message} for user #{uid}"
+            return nil
+        rescue Twitter::Error::AlreadyRetweeted => error
+            # User has been suspended error (why is this under 'AlreadyRetweeted'?)
+            puts "#{error.message} for user #{uid}"
+            return nil
+        end
+
+        # catch an anomaly where sometimes the user data is incomplete
+        if user.statuses_count==0 and user.followers_count==0 and user.friends_count==0 then
+            next
+        else
+            $u_cache[uid] = user
+            return user
+        end
+    end
+
 end
 
 def get_users(uidlist) 
@@ -83,9 +104,9 @@ def get_followers_cursor(uid,cur)
         end
     end
 
-    $follower_cache[[uid,cur]] = newcur
+    $follower_cache[[uid,cur]] = newcur.attrs # only store attributes hash
     
-    return newcur
+    return newcur.attrs
 end
 
 $friend_cache = {}
@@ -113,9 +134,9 @@ def get_friends_cursor(uid,cur)
         end
     end
 
-    $friend_cache[[uid,cur]] = newcur
+    $friend_cache[[uid,cur]] = newcur.attrs
     
-    return newcur
+    return newcur.attrs
 end
 
 def get_random_follower(user, prng)
@@ -127,15 +148,15 @@ def get_random_follower(user, prng)
     next_user_id = 0
     while next_cursor != 0 do
         cur = get_followers_cursor(user.id, next_cursor)
-        if last_index + cur.ids.length <= follower_index then
-            last_index += cur.ids.length
+        if last_index + cur[:ids].length <= follower_index then
+            last_index += cur[:ids].length
         else
             within_cur_index = follower_index - last_index
-            next_user_id = cur.ids[within_cur_index]
+            next_user_id = cur[:ids][within_cur_index]
             break
         end 
 
-        next_cursor = cur.next_cursor
+        next_cursor = cur[:next_cursor]
     end
 
     return next_user_id
@@ -153,15 +174,15 @@ def get_random_friend_or_follower(user, prng)
         next_user_id = 0
         while next_cursor != 0 do
             cur = get_followers_cursor(user.id, next_cursor)
-            if last_index + cur.ids.length <= follower_index then
-                last_index += cur.ids.length
+            if last_index + cur[:ids].length <= follower_index then
+                last_index += cur[:ids].length
             else
                 within_cur_index = follower_index - last_index
-                next_user_id = cur.ids[within_cur_index]
+                next_user_id = cur[:ids][within_cur_index]
                 break
             end 
 
-            next_cursor = cur.next_cursor
+            next_cursor = cur[:next_cursor]
         end
         return next_user_id
     else
@@ -172,15 +193,15 @@ def get_random_friend_or_follower(user, prng)
         next_user_id = 0
         while next_cursor != 0 do
             cur = get_friends_cursor(user.id, next_cursor)
-            if last_index + cur.ids.length <= friend_index then
-                last_index += cur.ids.length
+            if last_index + cur[:ids].length <= friend_index then
+                last_index += cur[:ids].length
             else
                 within_cur_index = friend_index - last_index
-                next_user_id = cur.ids[within_cur_index]
+                next_user_id = cur[:ids][within_cur_index]
                 break
             end 
 
-            next_cursor = cur.next_cursor
+            next_cursor = cur[:next_cursor]
         end
         return next_user_id
     end
@@ -226,10 +247,10 @@ def bfs(len, worklist = [], visited = Set.new)
             cur = get_followers_cursor(current_user_id, next_cursor)
 
             # add unvisited users to worklist
-            worklist.concat( cur.ids.select { |fid| not visited.member?(fid) } ) 
+            worklist.concat( cur[:ids].select { |fid| not visited.member?(fid) } ) 
        
             # next page index 
-            next_cursor = cur.next_cursor
+            next_cursor = cur[:next_cursor]
         end
     }
     return sample
@@ -272,12 +293,12 @@ def smart_bfs(len, to_get_users = [], to_get_neighbors = [], visited = Set.new)
                 cur = get_followers_cursor(uid, next_cursor)
 
                 # add never-before-seen users to worklist
-                newusers = cur.ids.select { |fid| not visited.member?(fid) }
+                newusers = cur[:ids].sselect { |fid| not visited.member?(fid) }
                 newusers.each { |u| visited.add(u) }
                 to_get_users.concat( newusers ) 
 
                 # next page index 
-                next_cursor = cur.next_cursor
+                next_cursor = cur[:next_cursor]
             end
         end
     end
@@ -288,8 +309,10 @@ end
 $num_mhrw_rejected_samples = 0
 $num_mhrw_accepted_samples = 0
 $num_mhrw_protected_samples = 0
+$num_mhrw_error_samples = 0
 def mhrw(prng = Random.new(0), root, count)
     sample = []
+    sample_with_reject = []
     current_user_id = root
     num_samples = 0
     while num_samples < count do
@@ -298,12 +321,18 @@ def mhrw(prng = Random.new(0), root, count)
         # bail if no followers or friends (this should never happen)
         if v.followers_count+v.friends_count == 0 then
             # dead end
-            return [true,sample]
+            return [true,sample,sample_with_reject]
         end
 
         # pick a neighbor (friend or follower) uniformly at random
         neighbor_id = get_random_friend_or_follower(v, prng)
         w = get_user(neighbor_id)
+
+        # reject w if get_user failed (due to user not found, or suspended)
+        if not w then
+            $num_mhrw_error_samples += 1
+            next
+        end
 
         # reject w if protected account
         # Twitter API will not allow calls to followers/ids or friends/ids
@@ -323,17 +352,19 @@ def mhrw(prng = Random.new(0), root, count)
         if p <= kv.to_f/kw.to_f
             $num_mhrw_accepted_samples += 1
             sample.push(w)
+            sample_with_reject.push(w)
             num_samples += 1
             current_user_id = w.id
         else
             puts "reject #{w.name} because kv=#{kv} / kw=#{kw}"
             $num_mhrw_rejected_samples += 1
+            sample_with_reject.push(v)
             # stay at v
         end
     end
 
     # not dead end
-    return [false,sample]
+    return [false,sample,sample_with_reject]
 end
 
 
@@ -374,10 +405,19 @@ def collect_smart( root = 60011236, goal = 10000 )
 end
 
 require 'time'
-$mhrw_fn = 'twitter.mhrw.users'
+$mhrw_fn = "#{$dir}/twitter.mhrw.users"
+$mhrw_a_fn = "#{$dir}/twitter.mhrw.all.users"
+$global_prng = Random.new(Time.now.usec)
+
+## TODO! load prng state to resume if reloading this source file
+
 def collect_mhrw( root, goal = 100000 )
-    prng = Random.new(Time.now.usec)
+    prng = $global_prng
     File.open($mhrw_fn, 'a') { |f|
+        f.puts "---- new collection ----"
+        f.puts "---- started at uid=#{root} ----"
+    }
+    File.open($mhrw_a_fn, 'a') { |f|
         f.puts "---- new collection ----"
         f.puts "---- started at uid=#{root} ----"
     }
@@ -388,28 +428,37 @@ def collect_mhrw( root, goal = 100000 )
     rounds = 0
     while sofar < goal do
        rounds += 1
-       deadend,newsamples = mhrw( prng, next_uid, increment )
-       if not deadend then next_uid = newsamples[-1] end
+       deadend,newsamples,newsamplesall = mhrw( prng, next_uid, increment )
+       if not deadend then next_uid = newsamplesall[-1].id end
 
        #write samples to disk
        File.open($mhrw_fn, 'a') { |f|
            newsamples.each { |user|
                # include approximate time of collection
                user.attrs[:time_collected] = Time.now.to_s
-               f.puts "#{user.attrs}" # write the json string
+               f.puts "#{user.attrs}" # write the hash
            }
        }
-       sofar += newsamples.length
+       File.open($mhrw_a_fn, 'a') { |f|
+           newsamplesall.each { |user|
+               # include approximate time of collection
+               user.attrs[:time_collected] = Time.now.to_s
+               f.puts "#{user.attrs}" # write the hash
+           }
+       }
+       
+       sofar += newsamplesall.length
        puts "collected #{sofar} of #{goal}; acc=#{$num_mhrw_accepted_samples} rej=#{$num_mhrw_rejected_samples} prot=#{$num_mhrw_protected_samples}"
 
        if deadend then 
-           if newsamples.empty? then
+           if newsamplesall.empty? then
                puts "#{next_uid} was a dead end with no followers"
            else
-               puts "#{newsamples[-1]} was a dead end with no followers"
+               puts "#{newsamplesall[-1]} was a dead end with no followers"
            end
            raise "Dead end"
        end
     end
 end
 
+binding.pry
